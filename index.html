@@ -28,7 +28,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : "dienstplan-helios-pro";
+        const appId = typeof __app_id !== 'undefined' ? __app_id : "dienstplanprogramm";
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "", authDomain: "dienstplanprogramm.firebaseapp.com", projectId: "dienstplanprogramm"
         };
@@ -68,6 +68,27 @@
             };
         };
 
+        const INITIAL_EMPLOYEES = [
+            { id: '1', name: 'Adams, Hendrik', role: 'Stationsleitung', status: '100', prevOvertime: 0 },
+            { id: '2', name: 'Fuchsa, Jennifer', role: 'stellv. Leitung', status: '100', prevOvertime: 0 },
+            { id: '3', name: 'Günter, Stephanie', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '4', name: 'Blank, Alexandra', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '5', name: 'Friedrich, Kristina', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '6', name: 'Weienberg, Hanna', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '7', name: 'Hackmann, Matthias', role: 'Pflegekraft', status: '90', prevOvertime: 0 },
+            { id: '8', name: 'Buchmüller, Jörg', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '9', name: 'Rösken, Katrin', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '10', name: 'Theißen, Jennifer', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '11', name: 'Daniels, Justin', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '12', name: 'Kaymaz, Melda', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '13', name: 'Kühn, Philipp', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '14', name: 'Strachanski, Julia', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '15', name: 'Preußner, Pauline', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '16', name: 'Bielok, Lara', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '17', name: 'Wüstkamp, Bianca', role: 'Pflegekraft', status: '100', prevOvertime: 0 },
+            { id: '18', name: 'Bondzau, Martina', role: 'Pflegekraft', status: '100', prevOvertime: 0 }
+        ];
+
         const DEFAULT_SHIFTS = {
             FD: { label: 'Frühdienst', color: 'bg-cyan-500', textColor: 'text-cyan-950', hours: 7.7 },
             SD: { label: 'Spätdienst', color: 'bg-fuchsia-600', textColor: 'text-white', hours: 7.7 },
@@ -79,34 +100,77 @@
             X:  { label: 'Frei', color: 'bg-slate-500/20', textColor: 'text-slate-400', hours: 0 }
         };
 
+        const COLOR_OPTIONS = [
+            { value: 'bg-cyan-500', label: 'Cyan', text: 'text-cyan-950' },
+            { value: 'bg-fuchsia-600', label: 'Pink', text: 'text-white' },
+            { value: 'bg-indigo-600', label: 'Indigo', text: 'text-white' },
+            { value: 'bg-orange-600', label: 'Orange', text: 'text-white' },
+            { value: 'bg-amber-400', label: 'Gelb', text: 'text-amber-950' },
+            { value: 'bg-rose-600', label: 'Rot', text: 'text-white' },
+            { value: 'bg-emerald-500', label: 'Grün', text: 'text-emerald-950' },
+            { value: 'bg-blue-600', label: 'Blau', text: 'text-white' },
+            { value: 'bg-slate-500/20', label: 'Grau', text: 'text-slate-400' }
+        ];
+
         const App = () => {
             const [user, setUser] = useState(null);
-            const [plans, setPlans] = useState({ default: { name: "Hauptplan", employees: [], roster: {}, notes: {}, shifts: DEFAULT_SHIFTS } });
-            const [activePlanId, setActivePlanId] = useState('default');
             const [isDataLoaded, setIsDataLoaded] = useState(false);
+            const [dbError, setDbError] = useState(false);
             
-            // UI States
-            const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1));
-            const [activeShift, setActiveShift] = useState('FD');
-            const [isEditMode, setIsEditMode] = useState(false);
-            const [isDarkMode, setIsDarkMode] = useState(false);
-            const [viewMode, setViewMode] = useState('month'); 
-            const [zoom, setZoom] = useState(1);
-            const [isAiModalOpen, setIsAiModalOpen] = useState(false);
-            const [isPlanManagerOpen, setIsPlanManagerOpen] = useState(false);
-            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-            const [isSyncing, setIsSyncing] = useState(false);
+            // Core Data State
+            const [plans, setPlans] = useState({
+                default: { name: "Hauptplan", employees: INITIAL_EMPLOYEES, roster: {}, notes: {}, shifts: DEFAULT_SHIFTS }
+            });
+            const [activePlanId, setActivePlanId] = useState('default');
+            const [columnOrder, setColumnOrder] = useState(['status', 'soll', 'ist', 'diff', 'prev', 'saldo']);
+            const [showShiftCounts, setShowShiftCounts] = useState(true);
 
-            // Plan-spezifische Daten (Extraktion aus aktivem Plan)
+            // Active Plan Derived Variables
             const activePlan = plans[activePlanId] || plans['default'];
             const employees = activePlan.employees || [];
             const roster = activePlan.roster || {};
             const notes = activePlan.notes || {};
             const shifts = activePlan.shifts || DEFAULT_SHIFTS;
 
+            // UI State
+            const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1));
+            const [activeShift, setActiveShift] = useState('FD');
+            const [isEditMode, setIsEditMode] = useState(false);
+            const [isDarkMode, setIsDarkMode] = useState(false);
+            const [viewMode, setViewMode] = useState('month'); 
+            const [zoom, setZoom] = useState(1);
+            const [isSyncing, setIsSyncing] = useState(false);
+            const [dragItem, setDragItem] = useState(null);
+
+            // Modals State
+            const [isPlanManagerOpen, setIsPlanManagerOpen] = useState(false);
+            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [isYearOpen, setIsYearOpen] = useState(false);
+            const [noteModal, setNoteModal] = useState({ isOpen: false, empId: null, date: null, currentNote: '' });
+            const [newEmpModal, setNewEmpModal] = useState(false);
+            const [newEmpName, setNewEmpName] = useState('');
+            const [newEmpRole, setNewEmpRole] = useState('Pflegekraft');
+            const [editingEmp, setEditingEmp] = useState(null);
+
+            // Shift Editing State
+            const [newShiftCode, setNewShiftCode] = useState('');
+            const [newShiftLabel, setNewShiftLabel] = useState('');
+            const [newShiftHours, setNewShiftHours] = useState('7.7');
+            const [newShiftColor, setNewShiftColor] = useState('bg-blue-600');
+
+            // AI State
+            const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+            const [aiMode, setAiMode] = useState('handover');
+            const [aiLoading, setAiLoading] = useState(false);
+            const [aiResult, setAiResult] = useState('');
+            const [aiSelectedDate, setAiSelectedDate] = useState(new Date(2026, 3, 1));
+            const [aiCoverShift, setAiCoverShift] = useState('FD'); 
+            const [aiCustomPrompt, setAiCustomPrompt] = useState('');
+
+            // --- Database Sync ---
             useEffect(() => {
                 const initAuth = async () => {
-                    if (typeof __initial_auth_token !== 'undefined') await auth.signInWithCustomToken(__initial_auth_token);
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await auth.signInWithCustomToken(__initial_auth_token);
                     else await auth.signInAnonymously();
                 };
                 initAuth();
@@ -116,36 +180,55 @@
 
             useEffect(() => {
                 if (!user) return;
-                const docRef = db.doc(`artifacts/${appId}/public/data/rosterData/main`);
-                const unsubscribe = docRef.onSnapshot((doc) => {
-                    if (doc.exists) {
-                        const data = doc.data();
+                // Neuer Pfad v3, um kaputte alte Daten zu umgehen
+                const docRef = db.doc(`artifacts/${appId}/public/data/rosterData/v3`);
+                const unsubscribe = docRef.onSnapshot((docSnap) => {
+                    if (docSnap.exists) {
+                        const data = docSnap.data();
                         if (data.plans) setPlans(data.plans);
                         if (data.activePlanId) setActivePlanId(data.activePlanId);
+                        if (data.columnOrder) setColumnOrder(data.columnOrder);
+                        if (data.showShiftCounts !== undefined) setShowShiftCounts(data.showShiftCounts);
+                    } else {
+                        // Initiales Speichern der Standardwerte
+                        docRef.set({
+                            plans: { default: { name: "Hauptplan", employees: INITIAL_EMPLOYEES, roster: {}, notes: {}, shifts: DEFAULT_SHIFTS } },
+                            activePlanId: 'default',
+                            columnOrder: ['status', 'soll', 'ist', 'diff', 'prev', 'saldo'],
+                            showShiftCounts: true,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        }).catch(e => { console.error(e); setDbError(true); });
                     }
                     setIsDataLoaded(true);
-                }, () => setIsDataLoaded(true));
+                    setDbError(false);
+                }, (err) => {
+                    console.error(err);
+                    setDbError(true);
+                    setIsDataLoaded(true);
+                });
                 return () => unsubscribe();
             }, [user]);
 
             useEffect(() => {
-                if (!user || !isDataLoaded) return;
+                if (!user || !isDataLoaded || dbError) return;
                 const timer = setTimeout(() => {
                     setIsSyncing(true);
-                    db.doc(`artifacts/${appId}/public/data/rosterData/main`).set({ plans, activePlanId, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })
-                    .finally(() => setTimeout(() => setIsSyncing(false), 500));
-                }, 2000);
+                    db.doc(`artifacts/${appId}/public/data/rosterData/v3`).set({ 
+                        plans, activePlanId, columnOrder, showShiftCounts, updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+                    }, { merge: true })
+                    .then(() => setTimeout(() => setIsSyncing(false), 500))
+                    .catch(e => { console.error(e); setIsSyncing(false); });
+                }, 1500);
                 return () => clearTimeout(timer);
-            }, [plans, activePlanId]);
+            }, [plans, activePlanId, columnOrder, showShiftCounts, user, isDataLoaded, dbError]);
 
-            // --- Business Logic ---
+            // --- Core Logic ---
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
             const holidays = useMemo(() => getHolidaysNRW(year), [year]);
             
             const calculateWorkingDays = (y, m) => {
-                const h = getHolidaysNRW(y);
-                let count = 0;
+                const h = getHolidaysNRW(y); let count = 0;
                 const d = new Date(y, m, 1);
                 while (d.getMonth() === m) {
                     const k = d.toISOString().split('T')[0];
@@ -158,193 +241,313 @@
             const monthSollBase = workDays * 7.7;
 
             const visibleDays = useMemo(() => {
-                const days = [];
-                const d = new Date(year, month, 1);
+                const days = []; const d = new Date(year, month, 1);
                 while (d.getMonth() === month) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
                 return viewMode === 'month' ? days : days.slice(0, 7);
             }, [year, month, viewMode]);
 
-            // AZG-Check: Ruhezeit, Max-Arbeit, 6-Tage
+            const getDayCounts = (date) => {
+                const key = date.toISOString().split('T')[0];
+                const counts = { FD: 0, SD: 0, ND: 0 };
+                Object.values(roster).forEach(empRost => {
+                    const s = empRost[key];
+                    if (counts[s] !== undefined) counts[s]++;
+                });
+                return counts;
+            };
+
             const checkViolations = (empId, date, newShift) => {
                 const dateKey = date.toISOString().split('T')[0];
                 const empRost = roster[empId] || {};
                 const prevDate = new Date(date); prevDate.setDate(date.getDate() - 1);
                 const prevKey = prevDate.toISOString().split('T')[0];
                 const prevShift = empRost[prevKey];
-
                 const violations = [];
-                // 1. Ruhezeit (ND -> FD/SD ist kritisch)
+                
+                // Ruhezeit
                 if (prevShift === 'ND' && (newShift === 'FD' || newShift === 'SD')) {
-                    violations.push("Ruhezeitverletzung: Nach ND sind 11h Ruhe Pflicht!");
+                    violations.push("Achtung: Ruhezeit von 11h nach Nachtdienst nicht eingehalten!");
                 }
-                // 2. 6-Tage-Regel (Quick check)
+                // 6-Tage-Regel (prüft die letzten 6 Tage)
                 let streak = 0;
                 for(let i=1; i<7; i++) {
                     const checkDate = new Date(date); checkDate.setDate(date.getDate() - i);
-                    if(empRost[checkDate.toISOString().split('T')[0]]) streak++;
+                    if(empRost[checkDate.toISOString().split('T')[0]] && !['X', 'U', 'K'].includes(empRost[checkDate.toISOString().split('T')[0]])) streak++;
                     else break;
                 }
-                if(streak >= 6 && newShift) violations.push("6-Tage-Regel: Mitarbeiter braucht einen freien Tag!");
-                
+                if(streak >= 6 && newShift && !['X', 'U', 'K'].includes(newShift)) {
+                    violations.push("Achtung: Über 6 Arbeitstage am Stück!");
+                }
                 return violations;
-            };
-
-            const toggleShift = (empId, date) => {
-                if (!isEditMode) return;
-                const dateKey = date.toISOString().split('T')[0];
-                const currentShift = roster[empId]?.[dateKey];
-                const nextShift = currentShift === activeShift ? null : activeShift;
-
-                setPlans(prev => ({
-                    ...prev,
-                    [activePlanId]: {
-                        ...prev[activePlanId],
-                        roster: {
-                            ...(prev[activePlanId].roster || {}),
-                            [empId]: { ...(prev[activePlanId].roster?.[empId] || {}), [dateKey]: nextShift }
-                        }
-                    }
-                }));
             };
 
             const updateActivePlan = (updates) => {
                 setPlans(prev => ({ ...prev, [activePlanId]: { ...prev[activePlanId], ...updates } }));
             };
 
-            // --- Plan Management ---
+            const toggleShift = (empId, date) => {
+                if (!isEditMode) return;
+                const dateKey = date.toISOString().split('T')[0];
+                
+                if (activeShift === 'NOTE') {
+                    const currentNote = (notes[empId] || {})[dateKey] || "";
+                    setNoteModal({ isOpen: true, empId, date, currentNote });
+                } else {
+                    const currentShift = roster[empId]?.[dateKey];
+                    const nextShift = currentShift === activeShift ? null : activeShift;
+                    updateActivePlan({ roster: { ...roster, [empId]: { ...(roster[empId] || {}), [dateKey]: nextShift } } });
+                }
+            };
+
+            const updateEmployeeData = (id, field, value) => {
+                const newEmps = employees.map(e => e.id === id ? { ...e, [field]: value } : e);
+                updateActivePlan({ employees: newEmps });
+            };
+
+            const deleteEmployee = (id) => {
+                const newEmps = employees.filter(e => e.id !== id);
+                updateActivePlan({ employees: newEmps });
+                setEditingEmp(null);
+            };
+
+            const handleDragStart = (e, type, index) => { if (!isEditMode) return e.preventDefault(); setDragItem({ type, index }); };
+            const handleDragOver = (e) => e.preventDefault();
+            const handleDrop = (e, type, index) => {
+                if (!isEditMode || !dragItem || dragItem.type !== type) return;
+                if (type === 'employee') {
+                    const list = [...employees];
+                    const [moved] = list.splice(dragItem.index, 1);
+                    list.splice(index, 0, moved);
+                    updateActivePlan({ employees: list });
+                }
+                setDragItem(null);
+            };
+
+            // --- Shift Config Logic ---
+            const handleAddShift = () => {
+                if (!newShiftCode || !newShiftLabel) return;
+                const selectedColor = COLOR_OPTIONS.find(c => c.value === newShiftColor);
+                updateActivePlan({ shifts: { ...shifts, [newShiftCode]: { label: newShiftLabel, color: selectedColor.value, textColor: selectedColor.text, hours: parseFloat(newShiftHours) || 0 } } });
+                setNewShiftCode(''); setNewShiftLabel('');
+            };
+            const updateShiftData = (code, field, value) => { updateActivePlan({ shifts: { ...shifts, [code]: { ...shifts[code], [field]: value } } }); };
+            const deleteShift = (code) => { const s = { ...shifts }; delete s[code]; updateActivePlan({ shifts: s }); };
+            const moveShift = (code, direction) => {
+                const entries = Object.entries(shifts);
+                const idx = entries.findIndex(([k]) => k === code);
+                if (idx < 0) return;
+                if (direction === -1 && idx > 0) { const t = entries[idx-1]; entries[idx-1] = entries[idx]; entries[idx] = t; }
+                else if (direction === 1 && idx < entries.length-1) { const t = entries[idx+1]; entries[idx+1] = entries[idx]; entries[idx] = t; }
+                else return;
+                updateActivePlan({ shifts: Object.fromEntries(entries) });
+            };
+
+            // --- Multi-Plan Logic ---
             const createNewPlan = () => {
                 const id = "plan_" + Date.now();
                 setPlans(prev => ({ ...prev, [id]: { name: "Neuer Plan", employees: [...employees], roster: {}, notes: {}, shifts: { ...shifts } } }));
                 setActivePlanId(id);
             };
-
             const duplicatePlan = (id) => {
                 const newId = "copy_" + Date.now();
                 setPlans(prev => ({ ...prev, [newId]: { ...prev[id], name: prev[id].name + " (Kopie)" } }));
+                setActivePlanId(newId);
             };
-
             const deletePlan = (id) => {
                 if (Object.keys(plans).length <= 1) return;
-                const newPlans = { ...plans };
-                delete newPlans[id];
-                setPlans(newPlans);
-                setActivePlanId(Object.keys(newPlans)[0]);
+                const newPlans = { ...plans }; delete newPlans[id];
+                setPlans(newPlans); setActivePlanId(Object.keys(newPlans)[0]);
             };
-
             const exportData = () => {
-                const data = JSON.stringify({ plans, activePlanId }, null, 2);
+                const data = JSON.stringify({ plans, activePlanId, columnOrder, showShiftCounts }, null, 2);
                 const blob = new Blob([data], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = `dienstplan_export_${new Date().toISOString().split('T')[0]}.json`;
-                a.click();
+                const a = document.createElement('a'); a.href = url; a.download = `helios_dienstplan_export.json`; a.click();
             };
-
             const importData = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
+                const file = e.target.files[0]; if (!file) return;
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     try {
                         const parsed = JSON.parse(event.target.result);
-                        if (parsed.plans) {
-                            setPlans(parsed.plans);
-                            if (parsed.activePlanId) setActivePlanId(parsed.activePlanId);
-                        }
-                    } catch (err) { console.error("Import failed", err); }
+                        if (parsed.plans) setPlans(parsed.plans);
+                        if (parsed.activePlanId) setActivePlanId(parsed.activePlanId);
+                        if (parsed.columnOrder) setColumnOrder(parsed.columnOrder);
+                        setIsPlanManagerOpen(false);
+                    } catch (err) { alert("Fehler beim Importieren der Datei."); }
                 };
                 reader.readAsText(file);
             };
 
+            // --- AI Logic ---
+            const fetchWithRetry = async (url, options, retries = 5) => {
+                const delays = [1000, 2000, 4000, 8000, 16000];
+                for (let i = 0; i < retries; i++) {
+                    try {
+                        const res = await fetch(url, options);
+                        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                        return await res.json();
+                    } catch (e) {
+                        if (i === retries - 1) throw e;
+                        await new Promise(r => setTimeout(r, delays[i]));
+                    }
+                }
+            };
+
+            const callGemini = async (promptText) => {
+                const apiKey = ""; // Wird vom System eingefügt
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                const payload = {
+                    contents: [{ parts: [{ text: promptText }] }],
+                    systemInstruction: { parts: [{ text: "Du bist ein professioneller KI-Assistenz-Chefplaner für eine medizinische Notaufnahme. Antworte prägnant, strukturiert und auf Deutsch. Hebe wichtige Erkenntnisse hervor." }] }
+                };
+                const result = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                return result.candidates?.[0]?.content?.parts?.[0]?.text || "Keine Antwort generiert.";
+            };
+
+            const handleGenerateAI = async () => {
+                setAiLoading(true); setAiResult('');
+                try {
+                    let prompt = "";
+                    const dateStr = aiSelectedDate.toISOString().split('T')[0];
+                    if (aiMode === 'handover') {
+                        const workingToday = { FD: [], SD: [], ND: [] }; const todaysNotes = [];
+                        employees.forEach(emp => {
+                            const shift = roster[emp.id]?.[dateStr];
+                            if (workingToday[shift]) workingToday[shift].push(emp.name);
+                            const note = notes[emp.id]?.[dateStr];
+                            if (note) todaysNotes.push(`${emp.name}: ${note}`);
+                        });
+                        prompt = `Erstelle ein kurzes Übergabeprotokoll für den ${dateStr}. \nFD: ${workingToday.FD.join(', ') || '-'}\nSD: ${workingToday.SD.join(', ') || '-'}\nND: ${workingToday.ND.join(', ') || '-'}\nNotizen: ${todaysNotes.join('\n') || '-'}`;
+                    } else if (aiMode === 'cover') {
+                        const prevDate = new Date(aiSelectedDate); prevDate.setDate(prevDate.getDate() - 1);
+                        const prevDateStr = prevDate.toISOString().split('T')[0];
+                        const empContext = employees.map(emp => {
+                            const empSoll = monthSollBase * (parseFloat(emp.status) / 100);
+                            const ist = Object.values(roster[emp.id] || {}).reduce((acc, code) => acc + (shifts[code]?.hours || 0), 0);
+                            const saldo = parseFloat(emp.prevOvertime || 0) + (ist - empSoll);
+                            return `- ${emp.name}: Saldo ${saldo.toFixed(1)}h | Heute: ${roster[emp.id]?.[dateStr]||'Frei'} | Gestern: ${roster[emp.id]?.[prevDateStr]||'Frei'}`;
+                        }).join('\n');
+                        prompt = `Notfall am ${dateStr} in Schicht ${aiCoverShift}. Finde 3 Einspringer aus:\n${empContext}\nSchließe aus, wer heute arbeitet, krank ist oder U hat, oder wer gestern ND hatte. Bevorzuge Minusstunden. Verfasse eine kurze WhatsApp Anfrage.`;
+                    } else if (aiMode === 'fairness') {
+                        const rosterData = employees.map(emp => `${emp.name}: ${visibleDays.map(d => roster[emp.id]?.[d.toISOString().split('T')[0]] || '-').join(',')}`).join('\n');
+                        prompt = `Prüfe diesen Dienstplan auf Fairness und AZG-Verstöße (ND auf FD/SD, >6 Tage am Stück, extreme ND-Häufung):\n${rosterData}`;
+                    } else if (aiMode === 'chat') {
+                        const rosterData = employees.map(emp => `${emp.name}: ${visibleDays.map(d => `${d.getDate()}=${roster[emp.id]?.[d.toISOString().split('T')[0]] || '-'}`).join(',')}`).join('\n');
+                        prompt = `Hier ist der Dienstplan:\n${rosterData}\nBeantworte diese Frage der Stationsleitung: "${aiCustomPrompt}"`;
+                    } else {
+                        // Analysis
+                        prompt = `Analysiere den Dienstplan grob und gib 2-3 Tipps für die Leitung.`;
+                    }
+                    setAiResult(await callGemini(prompt));
+                } catch (error) { setAiResult("Fehler bei der KI-Generierung."); }
+                setAiLoading(false);
+            };
+
+            const formatAIResult = (text) => text.split(/(\*\*.*?\*\*)/g).map((p, i) => p.startsWith('**') ? <strong key={i} className="text-blue-500">{p.slice(2, -2)}</strong> : <span key={i}>{p}</span>);
+
             const themeClasses = isDarkMode ? 'bg-[#0a0f1d] text-slate-200' : 'bg-slate-50 text-slate-800';
             const cardClasses = isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-200 shadow-sm';
+            const tableHeaderClasses = isDarkMode ? 'bg-[#0f172a]' : 'bg-slate-100';
 
             return (
-                <div className={`app-container min-h-screen p-2 md:p-6 flex flex-col h-screen max-h-screen overflow-hidden transition-all ${themeClasses}`}>
+                <div className={`app-container min-h-screen p-2 md:p-6 flex flex-col h-screen max-h-screen overflow-hidden transition-colors duration-300 ${themeClasses}`}>
                     
-                    {/* TOP BAR / COMMAND CENTER */}
+                    {dbError && (
+                        <div className="bg-rose-600 text-white p-4 rounded-[24px] mb-4 shadow-lg flex items-center justify-between no-print shrink-0 border border-rose-500">
+                            <div className="flex items-center gap-3">
+                                <Icon name="shield-alert" size={24} />
+                                <div>
+                                    <h3 className="font-black uppercase tracking-widest text-sm">Datenbank blockiert</h3>
+                                    <p className="text-xs font-bold opacity-90">Sicherheitsregeln in Firebase prüfen (allow read, write: if true).</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setDbError(false)} className="p-2 hover:bg-black/20 rounded-xl"><Icon name="x"/></button>
+                        </div>
+                    )}
+
                     <header className={`flex items-center justify-between mb-4 p-4 rounded-[24px] no-print shrink-0 border shadow-lg ${cardClasses}`}>
                         <div className="flex items-center gap-4">
                             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                                 <Icon name="shield" className="text-white" />
                             </div>
                             <div onClick={() => setIsPlanManagerOpen(true)} className="cursor-pointer group">
-                                <h1 className="text-lg font-black uppercase tracking-tighter leading-none flex items-center gap-2 group-hover:text-blue-500">
+                                <h1 className="text-lg font-black uppercase tracking-tighter leading-none flex items-center gap-2 group-hover:text-blue-500 transition-colors">
                                     {activePlan.name} <Icon name="chevron-down" size={14} />
                                 </h1>
-                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{workDays} AT ({monthSollBase.toFixed(1)}h)</span>
+                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{workDays} AT ({monthSollBase.toFixed(1)}h Soll)</span>
                             </div>
                         </div>
 
                         <div className="flex items-center gap-2">
-                            {/* Nav */}
-                            <div className={`flex items-center p-1 rounded-xl border ${isDarkMode ? 'bg-black/40 border-white/5' : 'bg-slate-100 border-slate-200'}`}>
+                            <div className={`flex items-center p-1.5 rounded-xl border ${isDarkMode ? 'bg-black/40 border-white/5' : 'bg-slate-100 border-slate-200'}`}>
                                 <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))} className="p-1 hover:bg-slate-500/20 rounded-lg"><Icon name="chevron-left" size={16}/></button>
-                                <div className="px-3 font-bold text-[11px] uppercase min-w-[120px] text-center">{currentDate.toLocaleString('de-DE', { month: 'long', year: 'numeric' })}</div>
+                                <div onClick={() => setIsYearOpen(true)} className="px-4 font-bold text-[11px] min-w-[130px] text-center uppercase tracking-widest cursor-pointer hover:text-blue-500 transition-colors">
+                                    {currentDate.toLocaleString('de-DE', { month: 'long', year: 'numeric' })}
+                                </div>
                                 <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))} className="p-1 hover:bg-slate-500/20 rounded-lg"><Icon name="chevron-right" size={16}/></button>
                             </div>
 
-                            {/* Tools */}
                             <div className="flex items-center gap-1">
-                                <button onClick={() => setViewMode(viewMode === 'month' ? 'week' : 'month')} className={`p-2 rounded-xl border transition-all ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-200'} hover:bg-blue-500/10`} title="Ansicht wechseln">
-                                    <Icon name={viewMode === 'month' ? "layout" : "columns"} />
-                                </button>
-                                <button onClick={() => window.print()} className={`p-2 rounded-xl border transition-all ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-200'}`} title="Drucken">
-                                    <Icon name="printer" />
-                                </button>
-                                <button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-500 transition-all hover:bg-blue-500/20`} title="KI-Assistent">
-                                    <Icon name="sparkles" />
-                                </button>
+                                <button onClick={() => setViewMode(viewMode === 'month' ? 'week' : 'month')} className={`p-2 rounded-xl border transition-all ${isDarkMode ? 'bg-white/5 border-white/10 hover:bg-blue-500/20' : 'bg-white border-slate-200 hover:bg-blue-50'} text-slate-500`} title="Ansicht"><Icon name={viewMode === 'month' ? "layout" : "columns"} /></button>
+                                <button onClick={() => window.print()} className={`p-2 rounded-xl border transition-all ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-200'} text-slate-500`} title="Drucken"><Icon name="printer" /></button>
+                                <button onClick={() => setIsAiModalOpen(true)} className="p-2 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-all" title="KI-Assistent"><Icon name="sparkles" /></button>
                                 <div className="w-px h-6 bg-slate-500/20 mx-1"></div>
-                                <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-xl border border-white/10"><Icon name={isDarkMode ? "sun" : "moon"} /></button>
-                                <button onClick={() => setIsEditMode(!isEditMode)} className={`p-2 rounded-xl border ${isEditMode ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-white/10'}`}><Icon name={isEditMode ? "unlock" : "lock"} /></button>
-                                <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-xl border border-white/10"><Icon name="settings" /></button>
-                                <button onClick={exportData} className="p-2 rounded-xl border border-white/10" title="Export"><Icon name="download" /></button>
+                                <button onClick={() => setIsDarkMode(!isDarkMode)} className={`p-2 rounded-xl border ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-200'} text-slate-500`}><Icon name={isDarkMode ? "sun" : "moon"} /></button>
+                                <button onClick={() => setIsEditMode(!isEditMode)} className={`p-2 rounded-xl border transition-all ${isEditMode ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20' : isDarkMode ? 'bg-white/5 border-white/10 text-slate-500' : 'bg-white border-slate-200 text-slate-500'}`}><Icon name={isEditMode ? "unlock" : "lock"} /></button>
+                                <button onClick={() => setIsSettingsOpen(true)} className={`p-2 rounded-xl border ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-200'} text-slate-500`}><Icon name="settings" /></button>
                             </div>
                         </div>
                     </header>
 
                     <div className="flex flex-1 gap-4 overflow-hidden relative">
-                        {/* Sidebar Palette */}
-                        <aside className="w-14 md:w-48 flex flex-col gap-3 no-print shrink-0">
+                        <aside className="w-14 md:w-48 flex flex-col gap-3 no-print shrink-0 pb-10">
                             <div className={`p-3 rounded-[24px] border flex-1 overflow-y-auto custom-scrollbar ${cardClasses}`}>
                                 <p className="text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest hidden md:block">Dienste</p>
                                 <div className="flex flex-col gap-2">
+                                    <button onClick={() => setActiveShift('NOTE')} className={`flex items-center gap-3 p-2 rounded-xl border transition-all ${activeShift === 'NOTE' ? 'bg-amber-500/20 border-amber-500 scale-105 shadow-md' : isDarkMode ? 'bg-black/20 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
+                                        <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center text-white shrink-0"><Icon name="sticky-note" size={14}/></div>
+                                        <span className="text-[10px] font-black hidden md:block uppercase tracking-wider truncate">Notiz</span>
+                                    </button>
+                                    <div className={`h-px my-1 ${isDarkMode ? 'bg-white/5' : 'bg-slate-200'}`}></div>
                                     {Object.entries(shifts).map(([key, cfg]) => (
-                                        <button key={key} onClick={() => setActiveShift(key)} className={`flex items-center gap-3 p-2 rounded-xl border transition-all ${activeShift === key ? 'bg-blue-600/20 border-blue-500 scale-105 shadow-lg' : isDarkMode ? 'bg-black/20 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
+                                        <button key={key} onClick={() => setActiveShift(key)} className={`flex items-center gap-3 p-2 rounded-xl border transition-all ${activeShift === key ? 'bg-blue-600/20 border-blue-500 scale-105 shadow-md' : isDarkMode ? 'bg-black/20 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
                                             <div className={`w-8 h-8 rounded-lg ${cfg.color} flex items-center justify-center text-[10px] font-black ${cfg.textColor} shrink-0`}>{key}</div>
                                             <span className="text-[10px] font-black hidden md:block uppercase truncate">{cfg.label}</span>
                                         </button>
                                     ))}
                                 </div>
                             </div>
-                            <div className={`p-3 rounded-[24px] border ${cardClasses} hidden md:block`}>
-                                <div className="flex items-center gap-2 mb-2">
-                                    <Icon name="zoom-in" size={12} className="text-slate-500" />
-                                    <input type="range" min="0.5" max="1.5" step="0.1" value={zoom} onChange={(e) => setZoom(e.target.value)} className="w-full accent-blue-600" />
-                                </div>
+                            <div className={`hidden md:flex p-3 rounded-[24px] border ${cardClasses} flex-col items-center gap-2`}>
+                                <Icon name="zoom-in" size={14} className="text-slate-500" />
+                                <input type="range" min="0.5" max="1.5" step="0.05" value={zoom} onChange={(e) => setZoom(parseFloat(e.target.value))} className="w-full accent-blue-500 h-1 bg-slate-200 rounded-full appearance-none cursor-pointer" />
                             </div>
                         </aside>
 
-                        {/* Roster Table */}
                         <main className={`flex-1 rounded-[24px] overflow-hidden flex flex-col border relative ${cardClasses}`}>
-                            <div className="overflow-auto flex-1 custom-scrollbar">
+                            <div className="overflow-x-auto overflow-y-auto flex-1 custom-scrollbar">
                                 <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100/zoom}%` }}>
                                     <table className="w-full border-separate border-spacing-0">
                                         <thead>
-                                            <tr className="sticky top-0 z-[70] bg-[#0f172a] text-white">
-                                                <th className="p-3 text-left text-[10px] font-black border-b border-white/10 sticky left-0 z-[80] bg-[#0f172a] min-w-[180px] uppercase">Personal</th>
-                                                <th className="p-2 text-center text-[9px] font-black border-b border-white/10 uppercase opacity-60">Soll</th>
-                                                <th className="p-2 text-center text-[9px] font-black border-b border-white/10 uppercase opacity-60">Ist</th>
-                                                <th className="p-2 text-center text-[9px] font-black border-b border-white/10 uppercase opacity-60">+/-</th>
+                                            <tr className={`${tableHeaderClasses} sticky top-0 z-[70] backdrop-blur-md`}>
+                                                <th className={`p-3 text-left text-[10px] font-black border-b ${isDarkMode ? 'border-white/10' : 'border-slate-200'} sticky left-0 z-[80] min-w-[180px] uppercase ${tableHeaderClasses} shadow-[5px_0_10px_rgba(0,0,0,0.1)]`}>Personal</th>
+                                                {columnOrder.map(col => (
+                                                    <th key={col} className={`p-2 text-center text-[9px] font-black border-b ${isDarkMode ? 'border-white/10' : 'border-slate-200'} uppercase text-slate-500 tracking-widest ${tableHeaderClasses}`}>
+                                                        {col === 'status' ? 'VZ%' : col === 'soll' ? 'Soll' : col === 'ist' ? 'Ist' : col === 'diff' ? '+/-' : col === 'prev' ? 'Vmt' : 'Neu'}
+                                                    </th>
+                                                ))}
                                                 {visibleDays.map(day => {
                                                     const k = day.toISOString().split('T')[0];
                                                     const isH = !!holidays[k];
+                                                    const isW = day.getDay() === 0 || day.getDay() === 6;
+                                                    const counts = getDayCounts(day);
+                                                    const understaffed = counts.FD < 2 || counts.SD < 2 || counts.ND < 2;
                                                     return (
-                                                        <th key={k} className={`p-2 border-b border-white/10 min-w-[50px] ${isH ? 'bg-amber-500/20' : ''}`}>
-                                                            <div className="flex flex-col items-center">
-                                                                <span className="text-[8px] uppercase font-bold opacity-40">{day.toLocaleDateString('de-DE', { weekday: 'short' })}</span>
-                                                                <span className={`text-xs font-black ${isH ? 'text-amber-500' : ''}`}>{day.getDate()}</span>
+                                                        <th key={k} className={`p-2 border-b ${isDarkMode ? 'border-white/10' : 'border-slate-200'} min-w-[50px] ${isH ? 'bg-amber-500/20' : isW ? 'bg-blue-500/10' : ''}`}>
+                                                            <div className="flex flex-col items-center relative py-1">
+                                                                {understaffed && <div className="absolute -top-1 -right-1 text-rose-500" title="Unterbesetzt!"><Icon name="alert-triangle" size={10} /></div>}
+                                                                <span className="text-[8px] uppercase font-bold opacity-50">{day.toLocaleDateString('de-DE', { weekday: 'short' })}</span>
+                                                                <span className={`text-xs font-black ${isH ? 'text-amber-500' : isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{day.getDate()}</span>
                                                             </div>
                                                         </th>
                                                     );
@@ -355,32 +558,46 @@
                                             {employees.map((emp, rIdx) => {
                                                 const empSoll = monthSollBase * (parseFloat(emp.status) / 100);
                                                 const empRost = roster[emp.id] || {};
+                                                const empNotes = notes[emp.id] || {};
                                                 const ist = Object.values(empRost).reduce((acc, code) => acc + (shifts[code]?.hours || 0), 0);
                                                 const diff = ist - empSoll;
+                                                const saldo = parseFloat(emp.prevOvertime || 0) + diff;
 
                                                 return (
-                                                    <tr key={emp.id} className="hover:bg-blue-500/5 transition-colors">
-                                                        <td className="p-3 sticky left-0 z-40 bg-[#0f172a] text-white border-r border-white/5">
-                                                            <div className="font-black text-[11px] uppercase truncate">{emp.name}</div>
-                                                            <div className="text-[8px] opacity-60 uppercase">{emp.role}</div>
+                                                    <tr key={emp.id} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'employee', rIdx)} className={`group transition-colors ${isDarkMode ? 'hover:bg-white/[0.02]' : 'hover:bg-slate-50'}`}>
+                                                        <td draggable={isEditMode} onDragStart={(e) => handleDragStart(e, 'employee', rIdx)} className={`p-3 sticky left-0 z-40 border-r ${isDarkMode ? 'border-white/5 bg-[#0f172a]' : 'border-slate-200 bg-white'} ${isEditMode ? 'cursor-grab' : 'cursor-pointer'} shadow-[5px_0_10px_rgba(0,0,0,0.05)]`} onClick={() => isEditMode && setEditingEmp(emp)}>
+                                                            <div className="flex items-center gap-2">
+                                                                {isEditMode && <Icon name="grip-vertical" size={12} className="text-slate-400" />}
+                                                                <div>
+                                                                    <div className="font-black text-[11px] uppercase tracking-tight leading-none group-hover:text-blue-500 transition-colors whitespace-nowrap">{emp.name}</div>
+                                                                    <div className="text-[8px] text-slate-500 font-bold uppercase mt-1 opacity-80">{emp.role}</div>
+                                                                </div>
+                                                            </div>
                                                         </td>
-                                                        <td className="p-2 text-center text-[10px] font-mono opacity-50">{empSoll.toFixed(0)}</td>
-                                                        <td className="p-2 text-center text-[10px] font-black">{ist.toFixed(0)}</td>
-                                                        <td className={`p-2 text-center text-[10px] font-black ${diff >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{diff.toFixed(0)}</td>
-                                                        
+                                                        {columnOrder.map(col => {
+                                                            if (col === 'status') return <td key={col} className={`p-2 text-center text-[10px] font-bold text-slate-500 border-r ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>{emp.status}%</td>;
+                                                            if (col === 'soll') return <td key={col} className={`p-2 text-center text-[10px] font-mono text-slate-400 border-r ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>{empSoll.toFixed(0)}</td>;
+                                                            if (col === 'ist') return <td key={col} className={`p-2 text-center text-[11px] font-black border-r ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>{ist.toFixed(0)}</td>;
+                                                            if (col === 'diff') return <td key={col} className={`p-2 text-center text-[10px] font-black border-r ${isDarkMode ? 'border-white/5' : 'border-slate-200'} ${diff >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{diff > 0 ? '+' : ''}{diff.toFixed(0)}</td>;
+                                                            if (col === 'prev') return <td key={col} className={`p-2 text-center text-[10px] font-black text-blue-500 border-r ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>{emp.prevOvertime}</td>;
+                                                            if (col === 'saldo') return <td key={col} className={`p-2 text-center text-[11px] font-black border-r ${isDarkMode ? 'border-white/5' : 'border-slate-200'} ${saldo >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{saldo.toFixed(1)}</td>;
+                                                            return null;
+                                                        })}
                                                         {visibleDays.map(day => {
                                                             const k = day.toISOString().split('T')[0];
                                                             const s = empRost[k];
-                                                            const violations = checkViolations(emp.id, day, activeShift);
+                                                            const n = empNotes[k];
                                                             const isH = !!holidays[k];
+                                                            const violations = checkViolations(emp.id, day, isEditMode ? activeShift : null);
                                                             
                                                             return (
-                                                                <td key={k} onClick={() => toggleShift(emp.id, day)} className={`p-1 border-r ${isDarkMode ? 'border-white/[0.02]' : 'border-slate-100'} cursor-pointer relative`}>
-                                                                    <div className={`shift-cell rounded-lg flex flex-col items-center justify-center ${s ? `${shifts[s]?.color} ${shifts[s]?.textColor} shadow-md` : ''}`}>
-                                                                        <span className="text-[10px] font-black">{s || ''}</span>
-                                                                        {isEditMode && !s && violations.length > 0 && (
+                                                                <td key={k} onClick={() => toggleShift(emp.id, day)} className={`p-1 border-r ${isDarkMode ? 'border-white/[0.02]' : 'border-slate-100'} transition-all ${isEditMode ? 'cursor-pointer hover:bg-black/5' : ''} ${isH ? 'bg-amber-500/5' : ''}`}>
+                                                                    <div className={`shift-cell rounded-lg flex flex-col items-center justify-center relative transition-all ${s && shifts[s] ? `${shifts[s].color} ${shifts[s].textColor} shadow-sm border ${isDarkMode ? 'border-white/10' : 'border-black/5'}` : ''}`}>
+                                                                        <span className="text-[10px] font-black leading-none">{s || ''}</span>
+                                                                        {n && <span className="text-[7px] font-bold leading-tight mt-1 bg-black/60 backdrop-blur-sm rounded-sm px-1 text-white line-clamp-2 max-w-[65px] text-center">{n}</span>}
+                                                                        {s && violations.length > 0 && (
                                                                             <div className="absolute top-0 right-0 p-0.5" title={violations.join("\n")}>
-                                                                                <Icon name="alert-circle" size={10} className="text-rose-500" />
+                                                                                <Icon name="alert-triangle" size={10} className="text-rose-600 drop-shadow" />
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -391,32 +608,50 @@
                                                 );
                                             })}
                                         </tbody>
+                                        {showShiftCounts && (
+                                            <tfoot>
+                                                <tr className={`${tableHeaderClasses} sticky bottom-0 z-[70] border-t ${isDarkMode ? 'border-white/10' : 'border-slate-200'} backdrop-blur-md`}>
+                                                    <td className={`p-3 font-black text-[9px] uppercase sticky left-0 z-[80] ${tableHeaderClasses} shadow-[5px_0_10px_rgba(0,0,0,0.1)]`}>Besetzung (FD/SD/ND)</td>
+                                                    <td colSpan={columnOrder.length} className={`border-r ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}></td>
+                                                    {visibleDays.map(day => {
+                                                        const c = getDayCounts(day);
+                                                        return (
+                                                            <td key={day.getTime()} className={`p-1 text-center text-[10px] font-black border-r ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>
+                                                                <div className="flex flex-col gap-0.5 py-1">
+                                                                    <span className="text-cyan-500">{c.FD}</span>
+                                                                    <span className="text-fuchsia-500">{c.SD}</span>
+                                                                    <span className="text-orange-500">{c.ND}</span>
+                                                                </div>
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            </tfoot>
+                                        )}
                                     </table>
                                 </div>
                             </div>
                         </main>
                     </div>
 
-                    {/* PLAN MANAGER MODAL */}
+                    {/* --- MODALS --- */}
+
+                    {/* Plan Manager Modal */}
                     {isPlanManagerOpen && (
-                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 backdrop-blur-md">
-                            <div className="absolute inset-0 bg-black/60" onClick={() => setIsPlanManagerOpen(false)}></div>
-                            <div className={`relative ${isDarkMode ? 'bg-[#0f172a] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-[32px] w-full max-w-lg p-8 shadow-2xl`}>
+                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+                            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setIsPlanManagerOpen(false)}></div>
+                            <div className={`relative ${isDarkMode ? 'bg-[#0f172a] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-[32px] w-full max-w-lg p-8 shadow-2xl animate-in zoom-in duration-200`}>
                                 <div className="flex items-center justify-between mb-6">
-                                    <h2 className="text-2xl font-black uppercase tracking-tighter">Plan-Management</h2>
-                                    <button onClick={() => setIsPlanManagerOpen(false)}><Icon name="x"/></button>
+                                    <h2 className="text-xl font-black uppercase flex items-center gap-2"><Icon name="folder" className="text-blue-500"/> Plan-Management</h2>
+                                    <button onClick={() => setIsPlanManagerOpen(false)} className="p-2 hover:bg-slate-500/20 rounded-full"><Icon name="x"/></button>
                                 </div>
-                                <div className="space-y-3 max-h-[400px] overflow-auto custom-scrollbar pr-2 mb-6">
+                                <div className="space-y-3 max-h-[300px] overflow-auto custom-scrollbar pr-2 mb-6">
                                     {Object.entries(plans).map(([id, p]) => (
-                                        <div key={id} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${activePlanId === id ? 'bg-blue-600 border-blue-500 text-white' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                                            <div onClick={() => { setActivePlanId(id); setIsPlanManagerOpen(false); }} className="flex-1 cursor-pointer">
-                                                <input 
-                                                    className="bg-transparent font-black uppercase text-sm border-none outline-none w-full" 
-                                                    value={p.name} 
-                                                    onChange={(e) => setPlans(prev => ({ ...prev, [id]: { ...prev[id], name: e.target.value } }))}
-                                                />
+                                        <div key={id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${activePlanId === id ? 'bg-blue-600 border-blue-500 text-white shadow-lg' : isDarkMode ? 'bg-white/5 border-white/5 hover:bg-white/10' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                                            <div onClick={() => { setActivePlanId(id); setIsPlanManagerOpen(false); }} className="flex-1 cursor-pointer font-black text-sm uppercase px-2">
+                                                {p.name}
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-1">
                                                 <button onClick={() => duplicatePlan(id)} className="p-2 hover:bg-white/20 rounded-lg"><Icon name="copy" size={14}/></button>
                                                 <button onClick={() => deletePlan(id)} className="p-2 hover:bg-rose-500/20 text-rose-500 rounded-lg"><Icon name="trash-2" size={14}/></button>
                                             </div>
@@ -424,9 +659,10 @@
                                     ))}
                                 </div>
                                 <div className="flex gap-3">
-                                    <button onClick={createNewPlan} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg shadow-blue-600/20">Neuer Plan erstellen</button>
-                                    <label className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg shadow-emerald-600/20 text-center cursor-pointer">
-                                        Import (.json)
+                                    <button onClick={createNewPlan} className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black uppercase text-xs shadow-lg transition-all">Neu +</button>
+                                    <button onClick={exportData} className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-black uppercase text-xs shadow-lg transition-all">Export .json</button>
+                                    <label className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black uppercase text-xs shadow-lg transition-all text-center cursor-pointer">
+                                        Import
                                         <input type="file" className="hidden" accept=".json" onChange={importData} />
                                     </label>
                                 </div>
@@ -434,39 +670,217 @@
                         </div>
                     )}
 
-                    {/* AI ASSISTANT MODAL (MODERN) */}
-                    {isAiModalOpen && (
-                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 backdrop-blur-md">
-                            <div className="absolute inset-0 bg-black/60" onClick={() => setIsAiModalOpen(false)}></div>
-                            <div className={`relative ${isDarkMode ? 'bg-[#0f172a] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-[32px] w-full max-w-2xl p-8 shadow-2xl flex flex-col max-h-[90vh]`}>
-                                <h2 className="text-2xl font-black uppercase mb-6 flex items-center gap-3"><span className="text-blue-500">✨</span> KI-Planungsassistent</h2>
-                                <div className="flex-1 space-y-4 overflow-auto pr-2 custom-scrollbar">
-                                    <button className="w-full p-6 rounded-2xl bg-blue-600/10 border border-blue-500/20 text-left hover:bg-blue-600/20 transition-all flex items-center justify-between">
-                                        <div>
-                                            <p className="font-black uppercase text-xs text-blue-500 mb-1 tracking-widest">Tausch-Assistent</p>
-                                            <p className="text-sm opacity-80">Wer kann am 15.04. für Hendrik einspringen?</p>
-                                        </div>
-                                        <Icon name="arrow-right" />
-                                    </button>
-                                    <button className="w-full p-6 rounded-2xl bg-emerald-600/10 border border-emerald-500/20 text-left hover:bg-emerald-600/20 transition-all flex items-center justify-between">
-                                        <div>
-                                            <p className="font-black uppercase text-xs text-emerald-500 mb-1 tracking-widest">Plan-Audit</p>
-                                            <p className="text-sm opacity-80">Prüfe den gesamten Monat auf AZG-Verstöße und Fairness.</p>
-                                        </div>
-                                        <Icon name="shield-check" />
-                                    </button>
-                                    <div className="p-6 bg-slate-500/10 rounded-2xl italic text-xs opacity-60">
-                                        Die KI-Features benötigen einen aktiven Gemini-API-Key. Der Tausch-Assistent prüft automatisch Ruhezeiten und Überstundenkonten.
+                    {/* Add Employee Modal */}
+                    {newEmpModal && (
+                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+                            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setNewEmpModal(false)}></div>
+                            <div className={`relative ${isDarkMode ? 'bg-[#0f172a] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-[32px] w-full max-w-sm p-8 shadow-2xl animate-in zoom-in duration-200`}>
+                                <h2 className="text-xl font-black mb-4 uppercase">Neuer Kollege</h2>
+                                <input value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} className={`w-full border rounded-xl p-3 outline-none focus:border-emerald-500 mb-3 text-sm font-bold ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="Name, Vorname" autoFocus />
+                                <input value={newEmpRole} onChange={(e) => setNewEmpRole(e.target.value)} className={`w-full border rounded-xl p-3 outline-none focus:border-emerald-500 mb-6 text-sm font-bold ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="Rolle (z.B. Pflegekraft)" />
+                                <div className="flex gap-3">
+                                    <button onClick={() => setNewEmpModal(false)} className={`flex-1 py-3 rounded-xl font-black uppercase text-xs transition-all ${isDarkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-100 hover:bg-slate-200'}`}>Abbrechen</button>
+                                    <button onClick={() => {
+                                        if (newEmpName.trim()) {
+                                            updateActivePlan({ employees: [...employees, { id: Date.now().toString(), name: newEmpName.trim(), role: newEmpRole.trim(), status: '100', prevOvertime: 0 }] });
+                                            setNewEmpModal(false);
+                                        }
+                                    }} className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 rounded-xl font-black uppercase text-xs text-white shadow-lg">Anlegen</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Edit Employee Modal */}
+                    {editingEmp && (
+                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+                            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setEditingEmp(null)}></div>
+                            <div className={`relative ${isDarkMode ? 'bg-[#0f172a] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-[32px] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-200`}>
+                                <div className="flex items-center justify-between mb-6">
+                                    <h2 className="text-xl font-black uppercase flex items-center gap-2"><Icon name="user" className="text-blue-500"/> Mitarbeiter bearbeiten</h2>
+                                    <button onClick={() => setEditingEmp(null)} className="p-2 hover:bg-slate-500/20 rounded-full"><Icon name="x"/></button>
+                                </div>
+                                <div className="space-y-4">
+                                    <div><label className="text-[10px] font-black text-slate-500 uppercase">Name</label><input type="text" value={editingEmp.name} onChange={(e) => { const v = e.target.value; setEditingEmp({...editingEmp, name: v}); updateEmployeeData(editingEmp.id, 'name', v); }} className={`w-full border rounded-xl p-3 font-black outline-none ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} /></div>
+                                    <div><label className="text-[10px] font-black text-slate-500 uppercase">Rolle</label><input type="text" value={editingEmp.role} onChange={(e) => { const v = e.target.value; setEditingEmp({...editingEmp, role: v}); updateEmployeeData(editingEmp.id, 'role', v); }} className={`w-full border rounded-xl p-3 font-bold outline-none ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} /></div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div><label className="text-[10px] font-black text-slate-500 uppercase">VZ (%)</label><input type="number" value={editingEmp.status} onChange={(e) => { const v = e.target.value; setEditingEmp({...editingEmp, status: v}); updateEmployeeData(editingEmp.id, 'status', v); }} className={`w-full border rounded-xl p-3 font-black outline-none ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} /></div>
+                                        <div><label className="text-[10px] font-black text-slate-500 uppercase">Vormonat (+/-)</label><input type="number" value={editingEmp.prevOvertime} onChange={(e) => { const v = e.target.value; setEditingEmp({...editingEmp, prevOvertime: v}); updateEmployeeData(editingEmp.id, 'prevOvertime', v); }} className={`w-full border rounded-xl p-3 font-black outline-none text-blue-500 ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} /></div>
+                                    </div>
+                                    <div className="flex gap-2 pt-4">
+                                        <button onClick={() => deleteEmployee(editingEmp.id)} className="w-12 flex items-center justify-center bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white rounded-xl transition-all"><Icon name="trash-2" size={16}/></button>
+                                        <button onClick={() => setEditingEmp(null)} className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-black uppercase text-xs text-white shadow-lg transition-all">Fertigstellen</button>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    <style>{`
-                        @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-                        .animate-spin-slow { animation: spin-slow 8s linear infinite; }
-                    `}</style>
+                    {/* Settings Modal */}
+                    {isSettingsOpen && (
+                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+                            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setIsSettingsOpen(false)}></div>
+                            <div className={`relative ${isDarkMode ? 'bg-[#0f172a] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-[32px] w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar p-8 shadow-2xl animate-in zoom-in duration-200`}>
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-2xl font-black uppercase flex items-center gap-3"><Icon name="settings" className="text-slate-400"/> Einstellungen</h2>
+                                    <button onClick={() => setIsSettingsOpen(false)} className="p-2 rounded-full hover:bg-slate-500/20"><Icon name="x"/></button>
+                                </div>
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${isDarkMode ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                                            <input type="checkbox" checked={showShiftCounts} onChange={e => setShowShiftCounts(e.target.checked)} className="w-5 h-5 rounded accent-blue-500" />
+                                            <span className="text-sm font-bold">Schichtzählung anzeigen</span>
+                                        </label>
+                                    </div>
+                                    <div>
+                                        <button onClick={() => { setIsSettingsOpen(false); setNewEmpName(''); setNewEmpRole('Pflegekraft'); setNewEmpModal(true); setIsEditMode(true); }} className="w-full py-4 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 hover:bg-emerald-500/20 transition-all">
+                                            <Icon name="user-plus" size={16}/> Neuen Kollegen anlegen
+                                        </button>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Sichtbare Spalten</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {['status', 'soll', 'ist', 'diff', 'prev', 'saldo'].map(key => (
+                                                <button key={key} onClick={() => setColumnOrder(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border transition-all ${columnOrder.includes(key) ? 'bg-blue-600 border-blue-500 text-white' : isDarkMode ? 'bg-white/5 border-white/10 opacity-50' : 'bg-slate-100 border-slate-200 opacity-50'}`}>
+                                                    {key === 'status' ? 'VZ%' : key === 'soll' ? 'Soll' : key === 'ist' ? 'Ist' : key === 'diff' ? '+/-' : key === 'prev' ? 'Vmt' : 'Neu'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="border-t border-white/10 pt-4">
+                                        <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Dienste verwalten</p>
+                                        <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2 mb-4">
+                                            {Object.entries(shifts).map(([code, cfg]) => (
+                                                <div key={code} className={`flex items-center gap-2 p-2 rounded-xl border ${isDarkMode ? 'bg-black/20 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
+                                                    <div className="flex flex-col gap-1 pr-1 border-r border-slate-500/20">
+                                                        <button onClick={() => moveShift(code, -1)} className="text-slate-500 hover:text-blue-500"><Icon name="chevron-up" size={14}/></button>
+                                                        <button onClick={() => moveShift(code, 1)} className="text-slate-500 hover:text-blue-500"><Icon name="chevron-down" size={14}/></button>
+                                                    </div>
+                                                    <input className={`w-10 font-black text-[10px] bg-transparent outline-none text-center ${cfg.color} ${cfg.textColor} rounded`} value={code} disabled />
+                                                    <input className="flex-1 font-bold text-xs bg-transparent outline-none" value={cfg.label} onChange={(e) => updateShiftData(code, 'label', e.target.value)} />
+                                                    <input type="number" step="0.1" className="w-14 font-mono text-xs bg-transparent outline-none text-right" value={cfg.hours} onChange={(e) => updateShiftData(code, 'hours', parseFloat(e.target.value))} />
+                                                    <button onClick={() => deleteShift(code)} className="p-1 text-slate-500 hover:text-rose-500"><Icon name="trash-2" size={14}/></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className={`flex flex-wrap items-center gap-2 p-3 rounded-xl border ${isDarkMode ? 'bg-blue-500/10 border-blue-500/20' : 'bg-blue-50 border-blue-200'}`}>
+                                            <input placeholder="Kürzel" className={`w-14 text-xs font-black outline-none uppercase p-1 rounded ${isDarkMode ? 'bg-black/40 text-white' : 'bg-white'}`} value={newShiftCode} onChange={e => setNewShiftCode(e.target.value.toUpperCase().slice(0, 3))} />
+                                            <input placeholder="Bezeichnung" className={`flex-1 text-xs font-bold outline-none p-1 rounded ${isDarkMode ? 'bg-black/40 text-white' : 'bg-white'}`} value={newShiftLabel} onChange={e => setNewShiftLabel(e.target.value)} />
+                                            <input type="number" step="0.1" placeholder="Std." className={`w-16 text-xs font-mono outline-none text-right p-1 rounded ${isDarkMode ? 'bg-black/40 text-white' : 'bg-white'}`} value={newShiftHours} onChange={e => setNewShiftHours(e.target.value)} />
+                                            <select className={`w-24 text-xs outline-none p-1 rounded ${isDarkMode ? 'bg-black/40 text-white' : 'bg-white'}`} value={newShiftColor} onChange={e => setNewShiftColor(e.target.value)}>
+                                                {COLOR_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                            </select>
+                                            <button onClick={handleAddShift} className="p-1.5 bg-blue-500 text-white rounded hover:bg-blue-400"><Icon name="plus" size={14}/></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Note Modal */}
+                    {noteModal.isOpen && (
+                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+                            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setNoteModal({ isOpen: false, empId: null, date: null, currentNote: '' })}></div>
+                            <div className={`relative ${isDarkMode ? 'bg-[#0f172a] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-[32px] w-full max-w-sm p-8 shadow-2xl animate-in zoom-in duration-200`}>
+                                <h2 className="text-xl font-black mb-4 uppercase">Notiz für {noteModal.date?.toLocaleDateString()}</h2>
+                                <textarea 
+                                    value={noteModal.currentNote} 
+                                    onChange={(e) => setNoteModal({...noteModal, currentNote: e.target.value})} 
+                                    className={`w-full border rounded-xl p-3 outline-none focus:border-amber-500 transition-all text-sm min-h-[100px] ${isDarkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200'}`} 
+                                    placeholder="Notiz eingeben..." autoFocus 
+                                />
+                                <div className="flex gap-3 mt-4">
+                                    <button onClick={() => setNoteModal({ isOpen: false, empId: null, date: null, currentNote: '' })} className={`flex-1 py-3 rounded-xl font-black uppercase text-xs transition-all ${isDarkMode ? 'bg-white/5 hover:bg-white/10' : 'bg-slate-100 hover:bg-slate-200'}`}>Abbrechen</button>
+                                    <button onClick={() => {
+                                        const dateKey = noteModal.date.toISOString().split('T')[0];
+                                        const text = noteModal.currentNote.trim();
+                                        const empNotes = { ...(notes[noteModal.empId] || {}) };
+                                        if (text === "") delete empNotes[dateKey]; else empNotes[dateKey] = text;
+                                        updateActivePlan({ notes: { ...notes, [noteModal.empId]: empNotes } });
+                                        setNoteModal({ isOpen: false, empId: null, date: null, currentNote: '' });
+                                    }} className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 rounded-xl font-black uppercase text-xs text-white shadow-lg">Speichern</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Yearly View Modal */}
+                    {isYearOpen && (
+                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+                            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setIsYearOpen(false)}></div>
+                            <div className={`relative ${isDarkMode ? 'bg-[#0f172a] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-[32px] w-full max-w-2xl p-8 shadow-2xl animate-in zoom-in duration-200`}>
+                                <h2 className="text-2xl font-black mb-6 uppercase"><Icon name="calendar" className="text-blue-500 inline mr-2"/> {year}</h2>
+                                <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                                    {[...Array(12)].map((_, i) => (
+                                        <button key={i} onClick={() => { setCurrentDate(new Date(year, i, 1)); setIsYearOpen(false); }} className={`p-4 rounded-2xl font-black text-xs uppercase border transition-all ${month === i ? 'bg-blue-600 border-blue-400 text-white shadow-lg' : isDarkMode ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                                            {new Date(year, i, 1).toLocaleString('de-DE', { month: 'long' })}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* AI ASSISTANT MODAL */}
+                    {isAiModalOpen && (
+                        <div className="fixed inset-0 z-[700] flex items-center justify-center p-4">
+                            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setIsAiModalOpen(false)}></div>
+                            <div className={`relative ${isDarkMode ? 'bg-[#0f172a] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-[32px] w-full max-w-2xl max-h-[90vh] flex flex-col p-8 shadow-2xl animate-in zoom-in duration-200`}>
+                                <div className="flex items-center justify-between mb-6 shrink-0">
+                                    <h2 className="text-2xl font-black tracking-tight uppercase flex items-center gap-3">
+                                        <span className="text-blue-500 text-3xl">✨</span> KI-Assistent
+                                    </h2>
+                                    <button onClick={() => setIsAiModalOpen(false)} className="p-2 rounded-full hover:bg-slate-500/20"><Icon name="x"/></button>
+                                </div>
+                                
+                                <div className="flex flex-wrap gap-2 mb-6 shrink-0 bg-slate-500/10 p-2 rounded-xl">
+                                    <button onClick={() => setAiMode('handover')} className={`flex-1 min-w-[110px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${aiMode === 'handover' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Tages-Übergabe</button>
+                                    <button onClick={() => setAiMode('analysis')} className={`flex-1 min-w-[110px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${aiMode === 'analysis' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Plan-Analyse</button>
+                                    <button onClick={() => setAiMode('cover')} className={`flex-1 min-w-[110px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${aiMode === 'cover' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Tausch-Helfer</button>
+                                    <button onClick={() => setAiMode('fairness')} className={`flex-1 min-w-[110px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${aiMode === 'fairness' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>AZG-Audit</button>
+                                    <button onClick={() => setAiMode('chat')} className={`flex-1 min-w-[110px] py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${aiMode === 'chat' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Freie Frage</button>
+                                </div>
+
+                                {(aiMode === 'handover' || aiMode === 'cover') && (
+                                    <div className={`mb-4 flex flex-wrap items-center gap-4 shrink-0 p-4 rounded-xl border ${isDarkMode ? 'bg-black/20 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Datum:</label>
+                                            <input type="date" value={aiSelectedDate.toISOString().split('T')[0]} onChange={(e) => setAiSelectedDate(new Date(e.target.value))} className={`border rounded-lg p-2 text-sm font-bold outline-none ${isDarkMode ? 'bg-black/40 border-white/10 text-white' : 'bg-white border-slate-200'}`} />
+                                        </div>
+                                        {aiMode === 'cover' && (
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Ausfall in Schicht:</label>
+                                                <select value={aiCoverShift} onChange={(e) => setAiCoverShift(e.target.value)} className={`border rounded-lg p-2 text-sm font-bold outline-none ${isDarkMode ? 'bg-black/40 border-white/10 text-white' : 'bg-white border-slate-200'}`}>
+                                                    {Object.keys(shifts).filter(k=>k!=='X').map(k => <option key={k} value={k}>{shifts[k].label}</option>)}
+                                                </select>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {aiMode === 'chat' && (
+                                    <div className={`mb-4 flex flex-col gap-2 shrink-0 p-4 rounded-xl border ${isDarkMode ? 'bg-black/20 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
+                                        <textarea value={aiCustomPrompt} onChange={(e) => setAiCustomPrompt(e.target.value)} placeholder="Frag das Orakel: Wer kann am 15. einspringen?" className={`w-full border rounded-xl p-3 outline-none text-sm min-h-[80px] ${isDarkMode ? 'bg-black/40 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`}/>
+                                    </div>
+                                )}
+
+                                <button onClick={handleGenerateAI} disabled={aiLoading} className={`w-full py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all text-white mb-6 shrink-0 flex items-center justify-center gap-2 ${aiLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500'}`}>
+                                    {aiLoading ? <Icon name="loader" className="animate-spin" /> : <Icon name="sparkles" size={16} />}
+                                    {aiLoading ? 'KI analysiert...' : 'Analysieren'}
+                                </button>
+
+                                <div className={`flex-1 overflow-y-auto custom-scrollbar p-6 rounded-2xl border min-h-[200px] ${isDarkMode ? 'bg-black/20 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
+                                    {aiResult ? (
+                                        <div className="text-sm leading-relaxed whitespace-pre-wrap font-medium">{formatAIResult(aiResult)}</div>
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center opacity-40 text-center"><Icon name="bot" size={48} className="mb-4" /><p className="text-sm font-bold">Warte auf Eingabe...</p></div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                 </div>
             );
         };
