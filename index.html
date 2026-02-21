@@ -29,8 +29,15 @@
         const { useState, useEffect, useMemo, useRef } = React;
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : "dienstplanprogramm";
+        
+        // FIX: Echte Firebase Konfiguration fest hinterlegt für GitHub-Hosting
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-            apiKey: "", authDomain: "dienstplanprogramm.firebaseapp.com", projectId: "dienstplanprogramm"
+            apiKey: "AIzaSyD3HcZOIv6Wyg3_5xoBnSnz-Eb4fgLr0SA",
+            authDomain: "dienstplanprogramm.firebaseapp.com",
+            projectId: "dienstplanprogramm",
+            storageBucket: "dienstplanprogramm.firebasestorage.app",
+            messagingSenderId: "193664964493",
+            appId: "1:193664964493:web:e99e822739cb13c8df0fc4"
         };
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -159,6 +166,7 @@
             const [newShiftColor, setNewShiftColor] = useState('bg-blue-600');
 
             // AI State
+            const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('helios_gemini_key') || '');
             const [isAiModalOpen, setIsAiModalOpen] = useState(false);
             const [aiMode, setAiMode] = useState('handover');
             const [aiLoading, setAiLoading] = useState(false);
@@ -180,7 +188,6 @@
 
             useEffect(() => {
                 if (!user) return;
-                // Neuer Pfad v3, um kaputte alte Daten zu umgehen
                 const docRef = db.doc(`artifacts/${appId}/public/data/rosterData/v3`);
                 const unsubscribe = docRef.onSnapshot((docSnap) => {
                     if (docSnap.exists) {
@@ -190,7 +197,6 @@
                         if (data.columnOrder) setColumnOrder(data.columnOrder);
                         if (data.showShiftCounts !== undefined) setShowShiftCounts(data.showShiftCounts);
                     } else {
-                        // Initiales Speichern der Standardwerte
                         docRef.set({
                             plans: { default: { name: "Hauptplan", employees: INITIAL_EMPLOYEES, roster: {}, notes: {}, shifts: DEFAULT_SHIFTS } },
                             activePlanId: 'default',
@@ -264,11 +270,9 @@
                 const prevShift = empRost[prevKey];
                 const violations = [];
                 
-                // Ruhezeit
                 if (prevShift === 'ND' && (newShift === 'FD' || newShift === 'SD')) {
                     violations.push("Achtung: Ruhezeit von 11h nach Nachtdienst nicht eingehalten!");
                 }
-                // 6-Tage-Regel (prüft die letzten 6 Tage)
                 let streak = 0;
                 for(let i=1; i<7; i++) {
                     const checkDate = new Date(date); checkDate.setDate(date.getDate() - i);
@@ -395,7 +399,14 @@
             };
 
             const callGemini = async (promptText) => {
-                const apiKey = ""; // Wird vom System eingefügt
+                // Nutze den lokalen Key auf GitHub oder leeren String im Canvas
+                const apiKey = geminiKey || ""; 
+                
+                if (!apiKey && typeof window.__firebase_config === 'undefined') {
+                    // Falls wir nicht im Canvas-Editor sind (Github etc.) und kein Key da ist
+                    return "Fehler: Kein Gemini API-Key hinterlegt. Bitte trage deinen API-Key in den Einstellungen (Zahnrad-Symbol) ein, damit die KI hier funktioniert.";
+                }
+
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
                 const payload = {
                     contents: [{ parts: [{ text: promptText }] }],
@@ -440,7 +451,7 @@
                         prompt = `Analysiere den Dienstplan grob und gib 2-3 Tipps für die Leitung.`;
                     }
                     setAiResult(await callGemini(prompt));
-                } catch (error) { setAiResult("Fehler bei der KI-Generierung."); }
+                } catch (error) { setAiResult("Fehler bei der KI-Generierung. Stelle sicher, dass dein API Key gültig ist."); }
                 setAiLoading(false);
             };
 
@@ -726,6 +737,26 @@
                                     <button onClick={() => setIsSettingsOpen(false)} className="p-2 rounded-full hover:bg-slate-500/20"><Icon name="x"/></button>
                                 </div>
                                 <div className="space-y-6">
+                                    
+                                    {/* --- NEU: Gemini API Feld für GitHub Hosting --- */}
+                                    <div className="border-b border-white/10 pb-6">
+                                        <p className="text-[10px] font-black uppercase text-slate-500 mb-2">KI-Assistent Setup</p>
+                                        <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-black/20 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
+                                            <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest block mb-1">Gemini API-Key (Für Github)</label>
+                                            <input 
+                                                type="password" 
+                                                value={geminiKey} 
+                                                onChange={(e) => {
+                                                    setGeminiKey(e.target.value);
+                                                    localStorage.setItem('helios_gemini_key', e.target.value);
+                                                }} 
+                                                placeholder="AIzaSy..." 
+                                                className={`w-full border rounded-lg p-2 text-xs font-mono outline-none focus:border-blue-500 ${isDarkMode ? 'bg-black/40 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'}`} 
+                                            />
+                                            <p className="text-[8px] mt-2 text-slate-500 font-bold leading-tight">Wird lokal im Browser gespeichert. Ohne Key funktioniert die KI auf Github nicht.</p>
+                                        </div>
+                                    </div>
+
                                     <div>
                                         <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${isDarkMode ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
                                             <input type="checkbox" checked={showShiftCounts} onChange={e => setShowShiftCounts(e.target.checked)} className="w-5 h-5 rounded accent-blue-500" />
